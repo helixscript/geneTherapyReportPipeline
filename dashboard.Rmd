@@ -1,0 +1,90 @@
+---
+params: 
+    reportOutputDir: "x"
+    sequencingArchiveDir: "x"
+title: "Bushman group projects"
+output: html_document
+---
+
+
+
+### Gene therapy projects overview  
+(Trial specific reports linked from trial names)
+<br>
+<br>
+
+```{r, warning=FALSE, echo = FALSE, message = FALSE, results = 'asis'}
+library(DT)
+library(tidyverse)
+library(lubridate)
+library(RColorBrewer)
+library(grDevices)
+library(RMySQL)
+
+options(stringsAsFactors = FALSE)
+
+
+d <- bind_rows(lapply(list.files(path = params$reportOutputDir, pattern = 'trial.rds', recursive = TRUE, full.names = TRUE), function(x){
+  d <- data.frame(readRDS(x))
+  trial <- d$trial
+  d$trial <- paste0('<a href = "../trials/', trial, '/index.html">', trial, '</a>')
+  d
+}))
+
+datatable(d, options = list(columnDefs = list(list(className = 'dt-center', targets = c(1:1))),
+                            pageLength = 25), escape = FALSE, rownames = FALSE)
+```
+<br>
+<br> 
+
+
+<b>Sequencing runs from the last 365 days.</b>  
+<br>
+
+```{r, warning=FALSE, echo = FALSE, message = FALSE, results = 'asis'}
+invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
+dbConn  <- dbConnect(MySQL(), group='specimen_management')
+samples <- dbGetQuery(dbConn, 'select * from gtsp')
+
+dbConn  <- dbConnect(MySQL(), group='intsites_miseq')
+intSiteSamples <- dbGetQuery(dbConn, 'select sampleName, miseqid from samples where sampleName like "%GTSP%"')
+invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
+
+processedRuns <- unique(intSiteSamples$miseqid)
+
+d <- list.dirs(sequencingArchiveDir, recursive = FALSE, full.names = FALSE)
+
+
+d <- tibble(runName = d,
+            date = ymd(str_extract(runName, '\\d+')),
+            daysSinceRun = as.integer(lubridate::today() - date))
+
+d <- filter(d, daysSinceRun <= 365)
+
+d <- bind_rows(lapply(split(d, 1:nrow(d)), function(x){
+  if(file.exists(file.path(sequencingArchiveDir, x$runName, 'SampleSheet.csv'))){
+    o <- read.table(file.path(sequencingArchiveDir, x$runName, 'SampleSheet.csv'),  row.names = NULL, sep = ',', fill = TRUE, quote = '', comment.char = '')
+    if(! 'Experiment Name' %in% o[,1]){
+      desc <- 'Experiment Name field missing'
+    } else {
+      desc <- o[o[,1] == 'Experiment Name',2]
+    }
+  } else {
+     desc <- 'SampleSheet missing'
+   }
+  
+  files <- list.files(file.path(sequencingArchiveDir, x$runName, 'Data', 'Intensities', 'BaseCalls'), pattern = '*.fastq*', full.names = TRUE)
+  x$dataFileSize <- NA
+  if(length(files) > 0) x$dataFileSize <- utils:::format.object_size(sum(sapply(files, function(f){ file.info(f)$size })), 'GB')
+  x$intSiteCaller <- x$runName %in% processedRuns
+  x$desc <- desc
+  x
+}))
+
+datatable(map_df(d, rev) %>% select(-daysSinceRun), options = list(autoWidth = TRUE, scrollX = TRUE,
+                                      columnDefs = list(list(width = '250px', targets = 0), list(width = '75px', targets = 1)),
+                            pageLength = 25), escape = FALSE, rownames = FALSE) %>%
+  DT::formatStyle(columns = c(1, 2, 3, 4, 5, 6), fontSize = '75%')
+
+```
+

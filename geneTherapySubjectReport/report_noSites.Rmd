@@ -1,0 +1,87 @@
+---
+fontsize: 12pt
+geometry: margin=0.50in
+subparagraph: yes
+params: 
+    title: "title"
+    date:  "0000-00-00"
+title: "`r params$title`"
+date:  "`r params$date`"
+header-includes:
+   - \usepackage{titlesec}
+   - \usepackage{array}
+   - \usepackage{makecell}
+   - \usepackage{booktabs}
+   - \usepackage{float}
+   - \usepackage{pdflscape}
+   - \newcommand{\blandscape}{\begin{landscape}}
+   - \newcommand{\elandscape}{\end{landscape}}
+output:
+  pdf_document:
+    toc: false
+    keep_tex: no
+    latex_engine: xelatex
+---
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(vegan)
+library(knitr)
+library(xtable)
+library(ggforce)
+library(gridExtra)
+library(RColorBrewer)
+library(grDevices)
+library(png)
+library(grid)
+library(pander)
+library(tidyverse)
+library(kableExtra)
+options(stringsAsFactors = FALSE)
+
+```
+
+\titleformat{\section}{       \fontsize{26pt}{10pt}\selectfont}{}{0em}{}
+\titleformat{\subsection}{    \fontsize{16pt}{10pt}\selectfont}{}{0em}{}
+\titleformat{\subsubsection}{ \fontsize{12pt}{10pt}\selectfont}{}{0em}{}
+\titleformat{\paragraph}{     \fontsize{ 8pt}{ 8pt}\selectfont}{}{0em}{}
+\titleformat{\subparagraph}{  \fontsize{ 6pt}{ 6pt}\selectfont}{}{0em}{}
+
+# Summary  
+
+No integration sites were recovered from any patient samples.
+
+\vspace{1.0cm}
+
+# Sample Summary  
+
+The table below decribes the samples analyzed with the INSPIIRED pipeline.  
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+
+# Add VCN
+summaryTable$VCN <- sampleData[match(summaryTable$GTSP, sampleData$SpecimenAccNum),]$VCN
+
+# "scale_down", 
+cat(kable(summaryTable, "latex", linesep = "", booktabs = T) %>% kable_styling(latex_options = c("hold_position")))
+```
+
+# Methods
+
+All coordinates are on human genome draft hg38.
+
+Detailed methods can be found these publications:  
+- Bioinformatics. 2012 Mar 15; 28(6): 755–762.   
+- Mol Ther Methods Clin Dev. 2017 Mar 17; 4: 17–26.  
+- Mol Ther Methods Clin Dev. 2017 Mar 17; 4: 39–49.  
+  
+Analysis software:  
+- INSPIIRED v1.1  (http://github.com/BushmanLab/INSPIIRED)  
+ 
+Report generation software:  
+- subjectReport v0.1 (http://github.com/everettJK/geneTherapySubjectReport)  
+
+
+
+
+
+

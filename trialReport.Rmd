@@ -1,0 +1,103 @@
+---
+params: 
+    title: "x"
+    trial:  "x"
+    reportPath: 'x'
+output: html_document
+---
+
+```{r, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(DT)
+library(stringr)
+library(dplyr)
+library(RMySQL)
+library(lubridate)
+```
+
+```{r, results='asis'}
+cat(paste0('Report last updated on ', format(Sys.Date(), format="%B %d, %Y")), '<br><br>\n')
+```
+
+### Subject reports  
+Individual subject reports are linked from the table below.<br>
+A complete archive of data tables (csv format) can be downloaded <b><a href = './data.zip'>here</a></b>.<br>
+<br>
+<br>
+
+```{r, warning=FALSE, message=FALSE, results='asis'}
+options(stringsAsFactors = FALSE)
+
+# Read in sample data.
+invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
+dbConn  <- dbConnect(MySQL(), group='specimen_management')
+samples <- dbGetQuery(dbConn, paste0('select * from gtsp where Trial = "', params$trial, '"'))
+
+# Read in samples with intSite data.
+invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
+dbConn  <- dbConnect(MySQL(), group='intsites_miseq')
+intSiteSamples <- dbGetQuery(dbConn, 'select * from samples where sampleName like "%GTSP%"')
+intSiteSamples$GTSP <- gsub('\\-\\d+$', '', intSiteSamples$sampleName)
+
+lastSampleRunDate <- function(trial, patient){
+  s <- subset(intSiteSamples, GTSP %in% subset(samples, Trial == trial & Patient == patient)$SpecimenAccNum)
+  m <- max(as.integer(unlist(lapply(strsplit(unique(s$miseqid), '_'), '[[', 1))))
+  as.character(ymd(m))
+}
+
+#save(list = ls(all.names = TRUE), file = "~/dev.RData", envir = environment())
+
+d <- data.frame(files = list.files(path = params$reportPath, pattern = '.pdf$', recursive = TRUE))
+if(nrow(d) == 0){
+  cat('<b><i>No subject reports are available.</i></b><br><br>') 
+} else {
+  d$subject <- unlist(lapply(strsplit(d$files, '/'), '[', 1))
+  d$reportDate <- unlist(lapply(file.path( params$reportPath, d$files), 
+                                function(x){ unlist(strsplit(as.character(file.info(x)$mtime), '\\s+'))[1] }))
+  
+  d <- rowwise(d) %>% 
+       mutate(lastSampleSeqDate = lastSampleRunDate(params$trial, subject)) %>%
+       ungroup()
+  
+  d$subject <-  paste0("<a href='./", d$files, "'>", d$subject, "</a>")
+  d$files <- NULL
+
+  datatable(d, 
+            options = list(columnDefs = list(list(className = 'dt-center', targets = c(1:2))), 
+                           pageLength = 50, searching = FALSE, lengthChange = FALSE),  
+            escape = FALSE, rownames = FALSE)
+}
+
+```
+<br>  
+<br>  
+
+### Delivered samples  
+
+<br>
+```{r, warning=FALSE, message=FALSE, results='asis'}
+
+samples <- dplyr::select(samples, Patient, SpecimenAccNum, Timepoint, SampleCellType, CellType, DateRcvd, SpecimenInfo)
+
+samples$illuminaSeqDate <- as.character(ymd(unlist(lapply(strsplit(intSiteSamples[match(samples$SpecimenAccNum, intSiteSamples$GTSP),]$miseqid, '_'), '[[', 1))))
+
+p <- readRDS('geneTherapyData/Bushman454seqData.rds')
+samples$`454 seqData` <- ifelse(samples$SpecimenAccNum %in% p$GTSP, 'yes', 'no')
+
+samples <- dplyr::rename(samples, ProvidedCellType = SampleCellType)
+
+d <- str_match(samples$SpecimenInfo, '\\d+\\-\\d+\\-\\d+|\\d+\\/\\d+\\/\\d+')
+
+if(any(grepl('\\d+\\/\\d+\\/\\d+', d))) d[grepl('\\d+\\/\\d+\\/\\d+', d)] <- as.character(mdy(d[grepl('\\d+\\/\\d+\\/\\d+', d)] ))
+samples$SpecimenInfoDate <- d
+
+#samples$SpecimenInfo <- NULL
+
+samples <- dplyr::select(samples, Patient, SpecimenAccNum, Timepoint, ProvidedCellType, CellType, DateRcvd, illuminaSeqDate, '454 seqData', SpecimenInfoDate, SpecimenInfo)
+
+datatable(samples, options = list(pageLength = 25), escape = FALSE, rownames = FALSE)
+
+saveRDS(list(trial = params$trial,
+             lastSampleSeqDate = rev(sort(samples$illuminaSeqDate))[1]),
+             file = file.path(params$reportPath, 'trial.rds'))
+```
