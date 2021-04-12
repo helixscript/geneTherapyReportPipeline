@@ -81,6 +81,13 @@ d <- bind_rows(lapply(split(d, 1:nrow(d)), function(x){
   x
 }))
 
+
+d$runName <- sapply(d$runName, function(x){
+  ifelse(file.exists(file.path(params$reportOutputDir, 'trials', 'seqRuns', x, 'report.pdf')), 
+         paste0('<a href = "../trials/seqRuns/', x, '/report.pdf">', x, '</a>'), x)
+})
+
+
 datatable(map_df(d, rev) %>% select(-daysSinceRun), options = list(autoWidth = TRUE, scrollX = TRUE,
                                       columnDefs = list(list(width = '250px', targets = 0), list(width = '75px', targets = 1)),
                             pageLength = 25), escape = FALSE, rownames = FALSE) %>%

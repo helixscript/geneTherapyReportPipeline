@@ -3,6 +3,10 @@ le <- function(x, s){
   o[length(o)]
 }
 
+tmpFile <- function(){ paste0(paste0(stringi::stri_rand_strings(30, 1, '[A-Za-z0-9]'), collapse = ''), '.tmp') }
+
+
+
 
 readSamplePlot <- function(reads, n){
   ds <- as.character(sample(unique(reads), n))
