@@ -36,18 +36,16 @@ args <- parser$parse_args()
 
 # IDE overrides for when working within an IDE.
 # if(! 'args' %in% ls()) args <- list()   	
-# args$specimenDB               <- 'specimen_management'
-# args$intSiteDB                <- 'intsites_miseq'
-# args$reportFile               <- 'report.Rmd'
-# args$patient                  <- 'p04409-01'
-# args$trial                    <- 'CART19_CLL'
-# args$outputDir                <- 'output/p04409-01'
-# args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
-# args$numClones                <- 10
-# args$use454ReadLevelRelAbunds <- FALSE
-# args$legacyData               <- '/media/lorax/data/software/geneTherapyData/legacyData.rds'
-
-message('F1')
+args$specimenDB               <- 'specimen_management'
+args$intSiteDB                <- 'intsites_miseq'
+args$reportFile               <- 'report.Rmd'
+args$patient                  <- 'pPatient1'
+args$trial                    <- 'sadelaineAbundantClonesFinal'
+args$outputDir                <- 'output/pPatient1'
+args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
+args$numClones                <- 10
+args$use454ReadLevelRelAbunds <- FALSE
+args$legacyData               <- '/media/lorax/data/software/geneTherapyData/legacyData.rds'
 
 noSitesReport <- function(sampleData){
   args$reportFile <- sub('report.Rmd', 'report_noSites.Rmd', args$reportFile)
@@ -107,11 +105,18 @@ if(file.exists(args$legacyData)){
 }
 
 
-message('F2')
-
-
 if(any(sampleIDs %in% intSiteSamples)){
   intSites <- gt23::getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
+  
+  # For each sample, remove minor genome components which should be cross contaminations 
+  # from analyzing each sample against each genome in a run.
+  intSites <- unlist(GRangesList(lapply(split(intSites, intSites$GTSP), function(x){
+    if(n_distinct(x$refGenome) > 1){
+      o <- table(x$refGenome)
+      x <- subset(x, refGenome == names(o[o == max(o)]))
+    }
+    x
+  })))
   
   if(length(intSites) == 0){
     noSitesReport(sampleData)
@@ -175,8 +180,6 @@ if(! all(is.numeric(intSites$timePointDays)))
               paste0(intSites$timePoint, collapse = ','), ' :: ', 
               paste0(intSites$timePointDays, collapse = ','))) 
 
-
-message('F3')
 
 # Here we break the typical intSite calling and annoation chain in order to capture
 # replicate level so that it can be saved to a data file for later anaylses. 

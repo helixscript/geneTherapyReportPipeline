@@ -6,7 +6,8 @@ intSiteDB.group  <- 'intsites_miseq'
 invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
 dbConn  <- dbConnect(MySQL(), group=intSiteDB.group)
 
-runID <- '210311_MN01490_0010_A000H3FJVT'
+runID <- '210611_MN01490_0021_A000H3FK2C'
+
 
 commands <- c("delete from multihitlengths where multihitID in (select multihitID from multihitpositions where sampleID in (select sampleID from samples where miseqid='xxx'))",
               "delete from multihitpositions where sampleID in (select sampleID from samples where miseqid='xxx')",

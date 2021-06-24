@@ -5,7 +5,7 @@ reportOutputDir      <- '/media/lorax/data/export/projects'
 Rscript              <- '/opt/R-3.4.4-20180823/lib64/R/bin/Rscript'
 softwareDir          <- '/media/lorax/data/software/geneTherapyReports'
 
-seqRunAnalysesToKeep <- 25
+seqRunAnalysesToKeep <- 50
 nBarCodes <- 30
 LTRwidth  <- 14
 readSamplePlotN <- 10000
@@ -38,13 +38,15 @@ if(! dir.exists(file.path(reportOutputDir, 'trials', 'seqRuns'))) dir.create(fil
 
 
 # Select sequencing runs to analyze.
+# NexSeq runs typically do not have the M after the leading date.
 d <- tibble(dir = list.dirs(sequencingArchiveDir, recursive = FALSE, full.names = TRUE),
             run = sapply(dir, le, '/'),
             date = unlist(lapply(dir, function(x){
               o <- unlist(strsplit(x, '/'))
               unlist(strsplit(o[length(o)], '_'))[1]
             }))) %>% 
-  filter(grepl('^\\d\\d\\d\\d\\d\\d_M', run)) %>% 
+  #filter(grepl('^\\d\\d\\d\\d\\d\\d_M', run)) %>% 
+  filter(grepl('^\\d\\d\\d\\d\\d\\d', run)) %>% 
   top_n(seqRunAnalysesToKeep, wt = date) %>%
   arrange(desc(date))
 
@@ -55,6 +57,11 @@ invisible(lapply(1:nrow(d), function(x){
   x <- d[x,]
   
   runID <- le(x$dir, '/')
+  
+  # Skip this run if the final output is present and it is not in the runsToIncude vector from the seqRunAnalysis 
+  # database table which would overide.
+  ## browser()
+  
   if(file.exists(file.path(reportOutputDir, 'trials', 'seqRuns', runID, 'trial.rds')) & ! runID %in% runsToInclude) return('report exists')
   message('\n\n', runID, '\n\n')
   
@@ -153,7 +160,9 @@ invisible(lapply(1:nrow(d), function(x){
     } 
   }
   
+  
   counts <- bind_cols(barCodeTbl, linkerCodeTbl, LTRtbl)
+  if(nrow(counts) == 0) return()
   
   if(nrow(LTRsampleTable) != 0){
     invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
