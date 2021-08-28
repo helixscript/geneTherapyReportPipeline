@@ -1,14 +1,18 @@
+#!/opt/R-3.4.4-20180823/lib64/R/bin/Rscript
 library(dplyr)
 library(readr)
 library(RMySQL)
+
+projectDir  <- '/media/lorax/data/export/projects'
+outputDir   <- '/media/lorax/data/export/projects/exchange'
+softwareDir <- '/media/lorax/data/software/geneTherapyReports'
+
+d <- data.frame(file = system(paste0('find ', projectDir, ' -name intSites.csv '), intern = TRUE))
 
 dbConn  <- dbConnect(MySQL(), group='specimen_management')
 samples <- dbGetQuery(dbConn, 'select * from gtsp')
 dbDisconnect(dbConn)
 
-projectDir <- '/media/lorax/data/export/projects'
-outputDir  <- '/media/lorax/data/export/projects/exchange'
-d <- data.frame(file = system(paste0('find ', projectDir, ' -name intSites.csv '), intern = TRUE))
 
 d$trial   <- unlist(lapply(strsplit(as.character(d$file), '/'), function(x) x[length(x)-2]))
 d$subject <- unlist(lapply(strsplit(as.character(d$file), '/'), function(x) x[length(x)-1]))
@@ -46,6 +50,11 @@ invisible(lapply(split(d, d$trial), function(x){
                 'nearestFeatureStrand',	'inFeatureExon',	'nearestFeatureDist',	'nearestOncoFeature', 'nearestOncoFeatureDist')
   
   write_tsv(o, file.path(outputDir, trialName, 'intSites.tsv'), col_names = TRUE)
+  system(paste0('cp ', softwareDir, '/intSites_readMe.txt ', file.path(outputDir, trialName, 'readMe.txt')))
   
-  system(paste0('zip -r ', paste0(file.path(outputDir, trialName), '.zip'), ' ', file.path(outputDir, trialName)))
+  dir <- getwd()
+  setwd(file.path(outputDir, trialName))
+  #system(paste0('zip -r ', paste0(file.path(outputDir, trialName), '.zip'), ' ', file.path(outputDir, trialName)))
+  system(paste0('zip -r ', paste0(file.path(outputDir, trialName), '.zip'), ' *'))
+  setwd(dir)
 }))

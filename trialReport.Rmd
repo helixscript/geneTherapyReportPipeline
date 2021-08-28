@@ -21,7 +21,7 @@ cat(paste0('Report last updated on ', format(Sys.Date(), format="%B %d, %Y")), '
 
 ### Subject reports  
 Individual subject reports are linked from the table below.<br>
-A complete archive of data tables (csv format) can be downloaded <b><a href = './data.zip'>here</a></b>.<br>
+A complete data archive can be downloaded <b><a href = '`r paste0('../../exchange/', params$trial, '.zip')`'>here</a></b>.<br>
 <br>
 <br>
 

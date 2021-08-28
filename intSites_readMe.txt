@@ -1,4 +1,4 @@
-Each row in the intSite.xlsx spreadsheet describes an integration site in the genome (refGenome). 
+Each row in the intSite.tsv spreadsheet describes an integration site in the genome (refGenome). 
 The first two fields (chromosome and position) define the position of an integration site while 
 the strand field defines in the vector integrated in the forward (+) or reverse (-) orientation. 
 The (reads) field reports the number of sequencing reads which supporting an integration site.

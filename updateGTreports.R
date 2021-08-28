@@ -146,8 +146,8 @@ if(nrow(r) > 0){
   cluster <- makeCluster(CPUs)
   clusterExport(cluster, c('Rscript', 'log', 'sampleDB.group', 'intSiteDB.group', 'reportOutputDir', 'softwareDir', 'intSitesamplesTbl', 'sampleDB.group'))
   
-  #o <- bind_rows(parLapply(cluster, split(r, r$n), function(x){
-  o <- bind_rows(lapply(split(r, r$n), function(x){
+  o <- bind_rows(parLapply(cluster, split(r, r$n), function(x){
+  #o <- bind_rows(lapply(split(r, r$n), function(x){
          library(dplyr)
          library(RMySQL)
          bind_rows(lapply(split(x, paste(x$patient, x$trial)), function(x2){
@@ -200,6 +200,10 @@ if(nrow(r) > 0){
   
   write.table(o, sep = '\t', file = log, quote = FALSE, row.names = FALSE, append = TRUE)
 }
+
+
+# Update data exchange archives.
+system(file.path(softwareDir, 'updateDataExchanges.R'))
 
 
 # Create trial level pages.
