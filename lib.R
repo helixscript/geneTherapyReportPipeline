@@ -9,7 +9,7 @@ tmpFile <- function(){ paste0(paste0(stringi::stri_rand_strings(30, 1, '[A-Za-z0
 
 
 readSamplePlot <- function(reads, n){
-  ds <- as.character(sample(unique(reads), n))
+  ds <- sample(unique(reads), n)
   dp <- lapply(strsplit(sort(ds), ''), function(x){ tibble(base = x, n = 1:length(x)) })
   dp <- bind_rows(mapply(function(x, n){ x$read <- n; x}, dp, 1:length(dp), SIMPLIFY = FALSE))
   dp$base <- factor(dp$base, levels = c('A', 'T', 'C', 'G', 'N'))

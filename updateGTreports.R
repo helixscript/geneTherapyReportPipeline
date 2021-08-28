@@ -10,6 +10,13 @@ legacyData           <- '/media/lorax/data/software/geneTherapyReports/geneThera
 if(file.exists(file.path(reportOutputDir, 'LOCK'))) q()
 system(paste('touch', file.path(reportOutputDir, 'LOCK')))
 
+log <- file.path(reportOutputDir, 'log')
+write(date(), file = log)
+
+# Update sequencing run reports.
+# Writes log to {reportOutputDir}/log
+system(file.path(softwareDir, 'updateSeqRunReports.R'))
+
 options(stringsAsFactors = FALSE, useFancyQuotes = FALSE)
 library(RMySQL)
 library(stringr)
@@ -25,15 +32,13 @@ library(rmarkdown)
 library(gt23)
 source(file.path(softwareDir, 'lib.R'))
 
-log <- file.path(reportOutputDir, 'reportCreation.log')
-write(date(), file = log, append = FALSE)
-
 
 # Create trial directories.
 if(! dir.exists(file.path(reportOutputDir, 'trials'))) dir.create(file.path(reportOutputDir, 'trials'))
 
 
 legacyData <- readRDS(legacyData)
+
 
 # Create a list of all GTSPs that passed through the INSPIIRED pipeline.
 invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
@@ -53,11 +58,7 @@ intSitesamplesTbl$SpecimenAccNum <- sub('\\-\\d+$', '', intSitesamplesTbl$sample
 intSitesamplesTbl <- left_join(intSitesamplesTbl, select(samples, SpecimenAccNum, Patient, Trial), by = 'SpecimenAccNum')
 
 
-
-
 invisible(sapply(unique(samples$Trial), function(x) dir.create(file.path(reportOutputDir, 'trials', x))))
-
-
 
 
 # Idenitfy Trials and patient reports which are no longer defined in the databse and delete them in the output directory.
@@ -70,7 +71,6 @@ invisible(lapply(list.files(reportOutputDir, recursive = TRUE, pattern = '.pdf$'
   trial <- o[length(o)-2]
   patient <-  o[length(o)-1]
   
-  #if(patient == 'p302U') browser()
     
   # Retrieve snap show of sample data from the time the report was last created.
   file <- paste0(reportOutputDir, '/', paste0(o[1:(length(o)-1)], collapse = '/'), '/', 'sampleData.csv')
@@ -96,13 +96,14 @@ invisible(lapply(list.files(reportOutputDir, recursive = TRUE, pattern = '.pdf$'
     if (nrow(sd) != nrow(sd2)){
        delete <- TRUE
     } else {
-      if(! all(sd == sd2)){
-        delete <- TRUE
+      if(length(sd) == length(sd2)){
+        if(! all(sd == sd2)){
+          delete <- TRUE
+        }
       }
     }
     
     if(delete){
-      #browser()
       message('\nDeleting patient directiory due to db mismatch: ', paste0(o[1:(length(o)-1)], collapse = '/'))
       unlink(paste0(reportOutputDir, '/', paste0(o[1:(length(o)-1)], collapse = '/')), recursive = TRUE)
     }
@@ -137,31 +138,43 @@ r <- r[! is.na(r$patient),]
 r <- r[! is.na(r$trial),]
 o <- tibble()
 
+
+
+
 if(nrow(r) > 0){
   r$n <- ntile(1:nrow(r), CPUs)
   cluster <- makeCluster(CPUs)
-  clusterExport(cluster, c('Rscript', 'log', 'sampleDB.group', 'intSiteDB.group', 'reportOutputDir', 'softwareDir'))
+  clusterExport(cluster, c('Rscript', 'log', 'sampleDB.group', 'intSiteDB.group', 'reportOutputDir', 'softwareDir', 'intSitesamplesTbl', 'sampleDB.group'))
   
   #o <- bind_rows(parLapply(cluster, split(r, r$n), function(x){
   o <- bind_rows(lapply(split(r, r$n), function(x){
          library(dplyr)
+         library(RMySQL)
          bind_rows(lapply(split(x, paste(x$patient, x$trial)), function(x2){
       
            command <- paste0(Rscript,  ' ', softwareDir, '/geneTherapySubjectReport/report.R ',
                              '--specimenDB  ', sampleDB.group, ' --intSiteDB ', intSiteDB.group, ' ',
                              '--patient "', x2$patient, '" --trial "', x2$trial, '" ',
                              '--outputDir ', file.path(reportOutputDir, 'trials', x2$trial), ' ',
+                             '--noSiteReportFile ', file.path(softwareDir, 'geneTherapySubjectReport', 'report_noSites.Rmd'), ' ',
                              '--reportFile ', file.path(softwareDir, 'geneTherapySubjectReport', 'report.Rmd'), ' ',
                              '--legacyData ', file.path(softwareDir,  'geneTherapyData', 'legacyData.rds'))
            
+           message(command)
            write(c(command, '\n'), file = log, append = TRUE)
   
       
+           invisible(sapply(dbListConnections(MySQL()), dbDisconnect))
+           dbConn  <- dbConnect(MySQL(), group=sampleDB.group)
+           
+           
            # Create a flag in the specimen database to update run analyses.
            sapply(unique(subset(intSitesamplesTbl, Patient == x2$patient & Trial == x2$trial)$miseqid), function(run){
              comm <- paste0('insert into seqRunAnalysis (miseqid, updateReport) values ("', run, '", "1") ON DUPLICATE KEY UPDATE updateReport="1"')
              DBI::dbSendQuery(dbConn, comm)
            })
+           
+           dbDisconnect(dbConn)
            
            # Remove previous result.
            # Report maker software creates patient diretory in output folder.
@@ -178,7 +191,6 @@ if(nrow(r) > 0){
               result <- 'success'
               system(paste0('touch ', file.path(reportOutputDir, 'trials', x2$trial, 'updateData')))
            } else {
-             ### browser()
              result <- 'failed'
            }
            
@@ -189,24 +201,26 @@ if(nrow(r) > 0){
   write.table(o, sep = '\t', file = log, quote = FALSE, row.names = FALSE, append = TRUE)
 }
 
+
 # Create trial level pages.
 # fairly quick -- fine to regenerate all reports with each script run.
-createTrialReports <- lapply(list.dirs(file.path(reportOutputDir, 'trials'), recursive = FALSE, full.names = TRUE), function(x){
-  tryCatch({
-    o <-unlist(strsplit(x, '/'))
-    rmarkdown::render(file.path(softwareDir, 'trialReport.Rmd'),
-                      output_file = file.path(x, 'index.html'),
-                      params = list('title' = gsub('_', ' ', o[length(o)]),
-                                    'trial' = o[length(o)],
-                                    'reportPath' = x))
-    return('Success')
-  }, error = function(e) {
-    return('Failed')
-  })
-})
 
-createTrialReports <- data.frame(result = unlist(createTrialReports))
-createTrialReports$trial <- list.dirs(file.path(reportOutputDir, 'trials'), recursive = FALSE)
+dirs <- list.dirs(file.path(reportOutputDir, 'trials'), recursive = FALSE, full.names = TRUE)
+
+for(d in dirs){
+  o <- unlist(strsplit(d, '/'))
+  message(o[length(o)], '\n\n')
+  rmarkdown::render(file.path(softwareDir, 'trialReport.Rmd'),
+                    output_file = file.path(d, 'index.html'),
+                    params = list('title' = gsub('_', ' ', o[length(o)]),
+                                  'trial' = o[length(o)],
+                                  'reportPath' = d))
+  gc()
+}
+
+
+#createTrialReports <- data.frame(result = unlist(createTrialReports))
+#createTrialReports$trial <- list.dirs(file.path(reportOutputDir, 'trials'), recursive = FALSE)
 
 
 if(! dir.exists(file.path(reportOutputDir, 'dashboard'))) dir.create(file.path(reportOutputDir, 'dashboard'))

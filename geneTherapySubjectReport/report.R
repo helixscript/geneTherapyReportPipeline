@@ -24,6 +24,7 @@ parser$add_argument("--patient", type = "character", help = "Patient identifier"
 parser$add_argument("--outputDir", type = "character", default = "output", help = "Output directory")
 parser$add_argument("--numClones", type="integer", default=10, help="Number of most abundant clones to show in relative abundance plots")
 parser$add_argument("--intSiteDB",  type="character", default="intsites_miseq", help="IntSite database group name")
+parser$add_argument("--noSiteReportFile", type="character", default="report_noSites.Rmd", help="Rmd file used to build reports")
 parser$add_argument("--reportFile", type="character", default="report.Rmd", help="Rmd file used to build reports")
 parser$add_argument("--specimenDB", type="character", default="specimen_management", help="Specimen database group name")
 parser$add_argument("--legacyData", type="character", default='legacyData.rds', help="Legacy fragment level data with read counts, ie. 454 sequencing, which can be subseted by patient and trial.")
@@ -36,25 +37,25 @@ args <- parser$parse_args()
 
 # IDE overrides for when working within an IDE.
 # if(! 'args' %in% ls()) args <- list()   	
-args$specimenDB               <- 'specimen_management'
-args$intSiteDB                <- 'intsites_miseq'
-args$reportFile               <- 'report.Rmd'
-args$patient                  <- 'pPatient1'
-args$trial                    <- 'sadelaineAbundantClonesFinal'
-args$outputDir                <- 'output/pPatient1'
-args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
-args$numClones                <- 10
-args$use454ReadLevelRelAbunds <- FALSE
-args$legacyData               <- '/media/lorax/data/software/geneTherapyData/legacyData.rds'
+# args$specimenDB               <- 'specimen_management'
+# args$intSiteDB                <- 'intsites_miseq'
+# args$reportFile               <- 'report.Rmd'
+# args$patient                  <- 'pPatient1'
+# args$trial                    <- 'sadelaineAbundantClonesFinal'
+# args$outputDir                <- 'output/pPatient1'
+# args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
+# args$numClones                <- 10
+# args$use454ReadLevelRelAbunds <- FALSE
+# args$legacyData               <- '/media/lorax/data/software/geneTherapyData/legacyData.rds'
 
 noSitesReport <- function(sampleData){
-  args$reportFile <- sub('report.Rmd', 'report_noSites.Rmd', args$reportFile)
+
   dir.create(file.path(args$outputDir, args$patient))
   
   summaryTable <- select(sampleData, SpecimenAccNum, Timepoint, CellType)
   names(summaryTable) <- c('GTSP', 'Timepoint', 'CellType')
   
-  rmarkdown::render(args$reportFile,
+  rmarkdown::render(args$noSiteReportFile,
                     output_file = paste0(args$outputDir, '/', args$patient, '/', args$patient, '.pdf'),
                     params = list('date'  = format(Sys.Date(), format="%B %d, %Y"),
                                   'title' = paste0('Analysis of integration site distributions and relative clonal abundance for subject ', args$patient)))
@@ -108,6 +109,11 @@ if(file.exists(args$legacyData)){
 if(any(sampleIDs %in% intSiteSamples)){
   intSites <- gt23::getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
   
+  if(length(intSites) == 0){
+    noSitesReport(sampleData)
+    q()
+  }
+  
   # For each sample, remove minor genome components which should be cross contaminations 
   # from analyzing each sample against each genome in a run.
   intSites <- unlist(GRangesList(lapply(split(intSites, intSites$GTSP), function(x){
@@ -128,7 +134,8 @@ if(any(sampleIDs %in% intSiteSamples)){
   intSites <- legacyData
   legacyData <- GRanges()
 } else {
-  stop('There is no Illumina or legacy data to work with.')
+  message('There is no Illumina or legacy data to work with.')
+  q()
 }
 
 
@@ -164,7 +171,10 @@ if(length(intSites) == 0){
 if(file.exists(args$allowedSamples)){
   allowedSamples <- gsub('\\s+', '', readLines(args$allowedSamples))
   inSites <- subset(intSites, GTSP %in% allowedSamples)
-  if(length(intSites) == 0) stop('Error -- all rows removed after applying allowedSamples filter.')
+  if(length(intSites) == 0){
+    message('Error -- all rows removed after applying allowedSamples filter.')
+    q()
+  }
 }
 
 
@@ -175,10 +185,12 @@ if(any(grepl('baseline', intSites$timePoint, ignore.case = TRUE))){
 }
 
 # Check time point conversions.
-if(! all(is.numeric(intSites$timePointDays))) 
-  stop(paste0('All time points were not convered to numeric values :: ',
+if(! all(is.numeric(intSites$timePointDays))){ 
+  message(paste0('All time points were not convered to numeric values :: ',
               paste0(intSites$timePoint, collapse = ','), ' :: ', 
-              paste0(intSites$timePointDays, collapse = ','))) 
+              paste0(intSites$timePointDays, collapse = ',')))
+  q()
+}
 
 
 # Here we break the typical intSite calling and annoation chain in order to capture
@@ -259,7 +271,10 @@ d$cellType <- gsub('^\\s+|\\s+$', '', toupper(d$cellType))
 #cellTypeNameConversions <- data.frame(apply(cellTypeNameConversions, 2, toupper))
 
 # Duplication of From values will result in duplication of intSite records.
-#if(any(duplicated(cellTypeNameConversions$From))) stop('There are duplicate "From" column values in the cellType name conversion file.')
+#if(any(duplicated(cellTypeNameConversions$From))){
+#  message('There are duplicate "From" column values in the cellType name conversion file.')
+#  q()
+#}
 
 # Join the conversion table to the intSite table, identify which cell types have a conversion and resassign the corresponding values.
 #d <- dplyr::left_join(d, cellTypeNameConversions, by = c('cellType' = 'From'))
@@ -473,7 +488,7 @@ abundantClones$patient <- args$patient
 summaryTable$patient   <- args$patient
 
 # Write out the key sample details as they were found in the database. 
-s <- subset(sampleData , SpecimenAccNum %in% summaryTable$GTSP) %>% select(SpecimenAccNum, Trial, CellType, Timepoint)
+s <- subset(sampleData , SpecimenAccNum %in% summaryTable$GTSP) %>% select(SpecimenAccNum, Trial, CellType, Timepoint, VCN)
 readr::write_csv(s, file.path(archivePath, 'sampleData.csv'))
 readr::write_csv(d, file.path(archivePath, 'intSites.csv'))
 readr::write_csv(d.wide, file.path(archivePath, 'intSites_wideView.csv'))

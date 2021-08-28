@@ -153,6 +153,8 @@ getDBgenomicFragments <- function(samples, sampleDB.group, intSiteDB.group){
   
   sites <- dplyr::bind_cols(sites, expandTimePoints(sites$timePoint))
   
+  sites <- tidyr::drop_na(sites)
+  
   intSites <-
     GenomicRanges::GRanges(seqnames = S4Vectors::Rle(sites$chr),
                            ranges   = IRanges::IRanges(start = pmin(sites$position, sites$breakpoint),

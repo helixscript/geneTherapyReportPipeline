@@ -38,7 +38,8 @@ datatable(d, options = list(columnDefs = list(list(className = 'dt-center', targ
 <br> 
 
 
-<b>Sequencing runs from the last 365 days.</b>  
+<b>Sequencing runs from the last 365 days.</b>   
+No data size information will be shown for runs without processed FASTQ files.  
 <br>
 
 ```{r, warning=FALSE, echo = FALSE, message = FALSE, results = 'asis'}

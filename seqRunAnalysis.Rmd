@@ -54,12 +54,22 @@ if(nrow(LTRsampleTable) > 0){
 ppNum <- function(n){ if(is.na(n)) return('na'); format(n, big.mark=",", scientific=FALSE, trim=TRUE) }
 
 d <- counts
-d[,1] <- cell_spec(d[,1], monospace = TRUE)
-d[,2] <- ppNum(d[,2])
-d[,3] <- cell_spec(d[,3], monospace = TRUE)
-d[,4] <- ppNum(d[,4])
+if(length(d) == 0) d <- data.frame()
+
+if(length(d) >= 2){
+  d[,1] <- cell_spec(d[,1], monospace = TRUE)
+  d[,2] <- ppNum(d[,2])
+}
+
+if(length(d) >= 4){
+  d[,3] <- cell_spec(d[,3], monospace = TRUE)
+  d[,4] <- ppNum(d[,4])
+}
+
+if(length(d) >= 6){
 d[,5] <- cell_spec(d[,5], monospace = TRUE)
 d[,6] <- ppNum(d[,6])
+}
 
 kable(d, "latex",  linesep = "", booktabs = T, escape = FALSE) %>% 
   kable_styling(latex_options = "scale_down", font_size = 7) 
