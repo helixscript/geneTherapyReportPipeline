@@ -40,16 +40,16 @@ args <- parser$parse_args()
 args$specimenDB               <- 'specimen_management'
 args$intSiteDB                <- 'intsites_miseq'
 args$reportFile               <- 'report.Rmd'
-args$patient                  <- 'pB101'
-args$trial                    <- 'CGD'
-args$outputDir                <- 'output/Viiv_HIV_p1'
-args$richPopCells             <- 'T CELLS,WHOLE BLOOD'
+args$patient                  <- 'pCT.004'
+args$trial                    <- 'CYS'
+args$outputDir                <- 'output/pCT.004'
+args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
 args$numClones                <- 10
 args$use454ReadLevelRelAbunds <- FALSE
 args$legacyData               <- '/media/lorax/data/software/geneTherapyData/legacyData.rds'
 
 noSitesReport <- function(sampleData){
-  
+
   dir.create(file.path(args$outputDir, args$patient))
   
   summaryTable <- select(sampleData, SpecimenAccNum, Timepoint, CellType)
@@ -81,10 +81,10 @@ dbConn        <- dbConnect(MySQL(), group = args$intSiteDB)
 o <- dbGetQuery(dbConn, 'select sampleName, miseqid from samples')
 
 sampleToRunDate <- tibble(GTSP = gsub('\\-\\d+$', '', o$sampleName), 
-                          date = lubridate::ymd(stringr::str_extract(o$miseqid, '\\d+'))) %>%
-  group_by(GTSP) %>% 
-  summarise(date = max(date)) %>% 
-  ungroup()
+                           date = lubridate::ymd(stringr::str_extract(o$miseqid, '\\d+'))) %>%
+                    group_by(GTSP) %>% 
+                    summarise(date = max(date)) %>% 
+                    ungroup()
 
 
 intSiteSamples <- unique(gsub('\\-\\d+$', '', o$sampleName))
@@ -97,20 +97,20 @@ intSiteSamples <- intSiteSamples[intSiteSamples %in% sampleIDs]
 intSites   <- GRanges()
 legacyData <- GRanges()
 
-if(file.exists(args$legacyData)){
-  legacyData <- makeGRangesFromDataFrame(subset(readRDS(args$legacyData), 
-                                                patient == args$patient & 
-                                                  trial == args$trial), 
-                                         keep.extra.columns = TRUE)
-  legacyData$trial <- NULL
-}
+#if(file.exists(args$legacyData)){
+#  legacyData <- makeGRangesFromDataFrame(subset(readRDS(args$legacyData), 
+#                                                patient == args$patient & 
+#                                                trial == args$trial), 
+#                                         keep.extra.columns = TRUE)
+#  legacyData$trial <- NULL
+#}
 
 
 if(any(sampleIDs %in% intSiteSamples)){
-  intSites <- getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
+  intSites <- gt23::getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
   
   if(length(intSites) == 0){
-    noSitesReport(sampleData)
+    noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
     q()
   }
   
@@ -125,7 +125,7 @@ if(any(sampleIDs %in% intSiteSamples)){
   })))
   
   if(length(intSites) == 0){
-    noSitesReport(sampleData)
+    noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
     q()
   }
   
@@ -138,21 +138,23 @@ if(any(sampleIDs %in% intSiteSamples)){
   q()
 }
 
+### Here - drop GTSP4590
+intSites <- intSites[intSites$GTSP != 'GTSP4590']
 
 # Both Illumina and legacy data is available, merge both into intSites.
 if(length(intSites) > 0 & length(legacyData) > 0){
   message(paste0('Merging legacy (', length(legacyData), ' sites) and production (', length(intSites), ' sites) data.'))
-  
+    
   # Order the metadata columns of intSites and legacy data so that they can be combined.
   d <- data.frame(mcols(intSites)) 
   mcols(intSites) <- d[, order(colnames(d))]
-  
+   
   # Reprocess the time points with the same function used in the gt23 pipeline for consistancy.
   d <- data.frame(mcols(legacyData)) 
   d <- dplyr::select(d, -timePointDays, -timePointMonths, -posid)
   d <- dplyr::bind_cols(d, expandTimePoints(d$timePoint))
   mcols(legacyData) <- d[, order(colnames(d))]
-  
+   
   intSites <- unlist(GRangesList(intSites, legacyData))
 }
 
@@ -162,7 +164,7 @@ intSites <- intSites[width(intSites) >= minRangeWidth]
 
 
 if(length(intSites) == 0){
-  noSitesReport(sampleData)
+  noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
   q()
 }
 
@@ -187,8 +189,8 @@ if(any(grepl('baseline', intSites$timePoint, ignore.case = TRUE))){
 # Check time point conversions.
 if(! all(is.numeric(intSites$timePointDays))){ 
   message(paste0('All time points were not convered to numeric values :: ',
-                 paste0(intSites$timePoint, collapse = ','), ' :: ', 
-                 paste0(intSites$timePointDays, collapse = ',')))
+              paste0(intSites$timePoint, collapse = ','), ' :: ', 
+              paste0(intSites$timePointDays, collapse = ',')))
   q()
 }
 
@@ -225,24 +227,24 @@ if( nrow(sites.multi) > 0 ){
   sites.multi$GTSP <- str_extract(sites.multi$sampleName, 'GTSP\\d+') 
   
   sites.multi <- left_join(sites.multi, replicateLevelTotalAbunds, by = 'sampleName') %>%
-    group_by(sampleName, multihitID) %>%
-    mutate(estAbund = length(unique(length)),
-           relAbund = ((estAbund / sum(totalReplicateAbund[1], estAbund))*100)) %>%
-    summarise(totalReplicateCells = sum(totalReplicateAbund[1], estAbund), relAbund = relAbund[1], GTSP = GTSP[1]) %>%
-    ungroup() %>%
-    left_join(select(sampleData, CellType, Timepoint, SpecimenAccNum), c("GTSP" = "SpecimenAccNum")) %>%
-    filter(relAbund >= 20) %>%
-    select(-GTSP) %>%
-    arrange(desc(relAbund)) %>%
-    mutate(relAbund = sprintf("%.1f%%", relAbund))
-  
+                 group_by(sampleName, multihitID) %>%
+                 mutate(estAbund = length(unique(length)),
+                        relAbund = ((estAbund / sum(totalReplicateAbund[1], estAbund))*100)) %>%
+                 summarise(totalReplicateCells = sum(totalReplicateAbund[1], estAbund), relAbund = relAbund[1], GTSP = GTSP[1]) %>%
+                 ungroup() %>%
+                 left_join(select(sampleData, CellType, Timepoint, SpecimenAccNum), c("GTSP" = "SpecimenAccNum")) %>%
+                 filter(relAbund >= 20) %>%
+                 select(-GTSP) %>%
+                 arrange(desc(relAbund)) %>%
+                 mutate(relAbund = sprintf("%.1f%%", relAbund))
+
   names(sites.multi) <- c('Replicate', 'Multihit id', 'Total cells in replicate', 'Multihit relative Abundance', 'Celltype', 'Timepoint')
 }
 
 
 intSites <- gt23::collapseReplicatesCalcAbunds(intSites.std.reps) %>%
-  gt23::annotateIntSites() %>%
-  data.frame()
+            gt23::annotateIntSites() %>%
+            data.frame()
 
 # Identify which samples were processed but did not return any intSites.
 failedIntSiteSamples <- intSiteSamples[! intSiteSamples %in% intSites$GTSP]
@@ -292,17 +294,17 @@ d.reps <- left_join(d.reps, o, by = 'GTSP')
 #~-~-~-~-~-~-~-~-~-~-~o~-~-~-~-~-~-~-~-~-~-~-~-~o~-~-~-~-~-~-~-~-~-~-~-~-~o~-~-~-~-~-~-~-~-~-~-~-~-~
 
 d <- dplyr::group_by(d, timePoint, cellType) %>%
-  dplyr::mutate(readsPerSample = sum(reads)) %>%
-  dplyr::ungroup() %>%
-  dplyr::group_by(timePoint, cellType, posid) %>%
-  dplyr::mutate(readsRelAbund = (sum(reads) / readsPerSample[1])*100) %>%
-  dplyr::ungroup() %>%
-  dplyr::group_by(cellType, timePoint, GTSP) %>%
-  dplyr::mutate(totalSampleFrags = sum(estAbund)) %>%
-  dplyr::ungroup() %>%
-  dplyr::group_by(cellType, timePoint) %>%
-  dplyr::mutate(include = ifelse(totalSampleFrags == max(totalSampleFrags), 'yes', 'no')) %>%
-  dplyr::ungroup()
+     dplyr::mutate(readsPerSample = sum(reads)) %>%
+     dplyr::ungroup() %>%
+     dplyr::group_by(timePoint, cellType, posid) %>%
+     dplyr::mutate(readsRelAbund = (sum(reads) / readsPerSample[1])*100) %>%
+     dplyr::ungroup() %>%
+     dplyr::group_by(cellType, timePoint, GTSP) %>%
+     dplyr::mutate(totalSampleFrags = sum(estAbund)) %>%
+     dplyr::ungroup() %>%
+     dplyr::group_by(cellType, timePoint) %>%
+     dplyr::mutate(include = ifelse(totalSampleFrags == max(totalSampleFrags), 'yes', 'no')) %>%
+     dplyr::ungroup()
 
 # Swap in readsRelAbund values for relAbund vlues for 454 data.
 if(args$use454ReadLevelRelAbunds) d <- dplyr::mutate(d, relAbund = ifelse(dataSource == '454', readsRelAbund, relAbund))
@@ -364,24 +366,24 @@ calculateUC50 <- function(abund){
 }
 
 summaryTable <- group_by(d, GTSP) %>%
-  summarise(dataSource    = dataSource[1],
-            timePointDays = timePointDays[1],
-            # Replicates    = n_distinct(sampleName),
-            # Patient       = patient[1],
-            Timepoint     = timePoint[1],
-            CellType      = cellType[1],
-            TotalReads    = ppNum(sum(reads)),
-            InferredCells = ppNum(sum(estAbund)),
-            UniqueSites   = ppNum(n_distinct(posid)),
-            Gini          = sprintf("%.3f", gini(estAbund)),
-            Chao1         = ppNum(round(estimateR(estAbund, index='chao')[2], 0)),
-            Shannon       = sprintf("%.2f", diversity(estAbund)),
-            Pielou        = sprintf("%.3f", diversity(estAbund)/log(specnumber(estAbund))),
-            UC50          = ppNum(calculateUC50(estAbund)),
-            Included      = include[1]) %>%
-  ungroup() %>%
-  arrange(timePointDays) %>%
-  select(-timePointDays)
+                summarise(dataSource    = dataSource[1],
+                          timePointDays = timePointDays[1],
+                          # Replicates    = n_distinct(sampleName),
+                          # Patient       = patient[1],
+                          Timepoint     = timePoint[1],
+                          CellType      = cellType[1],
+                          TotalReads    = ppNum(sum(reads)),
+                          InferredCells = ppNum(sum(estAbund)),
+                          UniqueSites   = ppNum(n_distinct(posid)),
+                          Gini          = sprintf("%.3f", gini(estAbund)),
+                          Chao1         = ppNum(round(estimateR(estAbund, index='chao')[2], 0)),
+                          Shannon       = sprintf("%.2f", diversity(estAbund)),
+                          Pielou        = sprintf("%.3f", diversity(estAbund)/log(specnumber(estAbund))),
+                          UC50          = ppNum(calculateUC50(estAbund)),
+                          Included      = include[1]) %>%
+               ungroup() %>%
+               arrange(timePointDays) %>%
+               select(-timePointDays)
 
 # Add failed samples.  JKE
 if(length(failedIntSiteSamples) > 0){
@@ -417,11 +419,11 @@ abundantClones <- bind_rows(lapply(split(d, d$cellType), function(x){
   bind_rows(lapply(split(x, x$timePoint), function(x2){
     
     lowAbundData <- dplyr::mutate(x2, posidLabel = 'LowAbund',
-                                  totalCells = sum(estAbund),
-                                  relAbund   = 100) %>%
-      dplyr::slice(1) %>% 
-      dplyr::select(cellType, timePoint, dataSource, posidLabel, totalCells, timePointDays, relAbund)
-    
+                                      totalCells = sum(estAbund),
+                                      relAbund   = 100) %>%
+                    dplyr::slice(1) %>% 
+                    dplyr::select(cellType, timePoint, dataSource, posidLabel, totalCells, timePointDays, relAbund)
+
     x3 <- subset(x2, posidLabel %in% topClones)
     if(nrow(x3) == 0) return(lowAbundData)
     x3$totalCells <- sum(x2$estAbund)
@@ -442,10 +444,10 @@ dir.create(file.path(args$outputDir, args$patient, 'wordClouds'), recursive = TR
 invisible(lapply(split(d, paste(d$cellType, d$timePoint)), function(x){
   #browser()
   x <- x[order(x$estAbund, decreasing = TRUE),]
-  
+
   # Handle older data which does not have estAbund values.  
   if(all(is.na(x$estAbund))) x <- x[order(x$reads, decreasing = TRUE),]
-  
+
   if(nrow(x) < maxWordCloudWords) maxWordCloudWords <- nrow(x)
   x <- x[1:maxWordCloudWords,]
   
@@ -461,7 +463,7 @@ invisible(lapply(split(d, paste(d$cellType, d$timePoint)), function(x){
   cellType <-  gsub('\\_|\\/', ' ', x$cellType[1])
   
   png(file = file.path(args$outputDir, args$patient, 'wordClouds', paste0(x$patient[1], '_', cellType, '_', x$timePoint[1], '_', 
-                                                                          x[maxWordCloudWords,]$estAbund, '_', x[1,]$estAbund, '_wordCloud.png')), res = 150)
+                    x[maxWordCloudWords,]$estAbund, '_', x[1,]$estAbund, '_wordCloud.png')), res = 150)
   
   wordcloud(names(w), w, random.order=FALSE, colors=colorRampPalette(brewer.pal(12, "Paired"))(maxWordCloudWords), rot.per=0, max.words = 50, scale = c(2, 0.2))
   dev.off()

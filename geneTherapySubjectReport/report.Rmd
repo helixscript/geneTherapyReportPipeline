@@ -230,6 +230,11 @@ columns represent samples which were analyzed but no integration sites were iden
 # Add VCN
 summaryTable$VCN <- sampleData[match(summaryTable$GTSP, sampleData$SpecimenAccNum),]$VCN
 
+# HERE
+ii <- which(summaryTable$GTSP == 'GTSP5381')
+summaryTable$VCN <- as.character(summaryTable$VCN)
+if(length(ii) == 1) summaryTable[ii,]$VCN <- 'FDP1: 2.73 / FDP2: 3.10'
+
 s <- unlist(lapply(1:50, function(x) rep(x, 32)))
 summaryTable$s <- s[1:nrow(summaryTable)]
 

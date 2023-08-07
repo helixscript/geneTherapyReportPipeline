@@ -38,10 +38,12 @@ library(kableExtra)
 options(stringsAsFactors = FALSE)
 ```
 
+This report provides an initial overview of the performance of the run specified in the title. In the first table, the report specifies the most prevalent bar codes detected. The displays on the following page show examples of the sequences detected. Following the sequence heat maps, a table shows the accession numbers, and the reads for each aligned to the human genome and yeast genome. The alignment to the yeast genome allows detection of positive controls, which consist of sythentic lentivirus LTRs joined to sequences from the Saccharomyces cereviseae genome. This allows assessment of the success of the run while rigorously monitoring possible PCR cross over between specimens. The final table shows the sonic abundance (marked "estAbund") of the yeast positive controls. Recovery of sonic abundance greater than 20 for each site documents robust data generation.
+
 ```{r, echo=FALSE, results='asis'}
 if(nrow(LTRsampleTable) > 0){
-  cat('The table below shows the unique LTR sequences (primer bit + LTR bit) found in the run metadata\n')
-  cat('whereas the following table shows the prevlence of different leader sequences.\n')
+  # cat('The table below shows the unique LTR sequences (primer bit + LTR bit) found in the run metadata\n')
+  # cat('whereas the following table shows the prevalence of different leader sequences.\n')
   cat('\n\\vspace{0.5cm}\n')
   cat(kable(LTRsampleTable, 'latex', linesep = "", booktabs = T) %>% kable_styling(font_size = 10))
 }
@@ -55,6 +57,8 @@ ppNum <- function(n){ if(is.na(n)) return('na'); format(n, big.mark=",", scienti
 
 d <- counts
 if(length(d) == 0) d <- data.frame()
+
+if(nrow(d) > 20) d <- d[1:20,]
 
 if(length(d) >= 2){
   d[,1] <- cell_spec(d[,1], monospace = TRUE)
@@ -98,6 +102,10 @@ if(nrow(runStats) > 0){
   cat('\nThe table below is a summary of intSiteCaller stages and called sites. Site counts are likely exaggerated because of alignment and sequencing errors which are corrected during subsequent analyses.  \n')
   cat('\n\\vspace{0.5cm}\n')
 
+  # Switch all zeros to NA.
+  runStats[runStats == 0] <- NA
+  
+  
   cat(kable(runStats, "latex",  linesep = "", booktabs = T) %>% kable_styling( font_size = 8))
 
   cat('\n\\newpage')

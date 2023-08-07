@@ -1,4 +1,8 @@
-sequencingArchiveDir <- '/media/sequencing/Illumina/'
+#!/opt/R-3.4.4-20180823/lib64/R/bin/Rscript
+
+#sequencingArchiveDir <- '/media/sequencing/Illumina/'
+sequencingArchiveDir <- '/media/lorax/data/sequencing/Illumina-archive'
+
 sampleDB.group       <- 'specimen_management'
 intSiteDB.group      <- 'intsites_miseq'
 reportOutputDir      <- '/media/lorax/data/export/projects'
@@ -7,15 +11,25 @@ softwareDir          <- '/media/lorax/data/software/geneTherapyReports'
 CPUs                 <- 10
 legacyData           <- '/media/lorax/data/software/geneTherapyReports/geneTherapyData/legacyData.rds'
 
-if(file.exists(file.path(reportOutputDir, 'LOCK'))) q()
-system(paste('touch', file.path(reportOutputDir, 'LOCK')))
 
 log <- file.path(reportOutputDir, 'log')
 write(date(), file = log)
 
+# Check for lock file.
+if(file.exists(file.path(reportOutputDir, 'reportMaker.lock'))){
+  write('reportMaker.lock file found -- software currently running or failed earlier.', file = log)
+} else {
+  system(paste('touch', file.path(reportOutputDir, 'reportMaker.lock')))
+}
+
+if(file.exists(file.path(reportOutputDir, 'PMACS.lock'))) stop('PMACS.lock file found -- aborting.')
+
+
 # Update sequencing run reports.
 # Writes log to {reportOutputDir}/log
 system(file.path(softwareDir, 'updateSeqRunReports.R'))
+
+
 
 options(stringsAsFactors = FALSE, useFancyQuotes = FALSE)
 library(RMySQL)
@@ -33,10 +47,11 @@ library(gt23)
 source(file.path(softwareDir, 'lib.R'))
 
 
-# Create trial directories.
+# Create trials directories.
 if(! dir.exists(file.path(reportOutputDir, 'trials'))) dir.create(file.path(reportOutputDir, 'trials'))
 
 
+# Read in legacy data. This is intSite data not stored in the current intSite database.
 legacyData <- readRDS(legacyData)
 
 
@@ -46,6 +61,7 @@ dbConn  <- dbConnect(MySQL(), group='intsites_miseq')
 intSitesamples    <- unname(unlist(dbGetQuery(dbConn, 'select sampleName from samples where sampleName like "%GTSP%"')))
 intSitesamples    <- unique(gsub('\\-\\d+$', '', intSitesamples))
 intSitesamplesTbl <- dbGetQuery(dbConn, 'select * from samples where sampleName like "%GTSP%"')
+
 
 # Read in sample data.
 dbConn  <- dbConnect(MySQL(), group = sampleDB.group)
@@ -58,11 +74,15 @@ intSitesamplesTbl$SpecimenAccNum <- sub('\\-\\d+$', '', intSitesamplesTbl$sample
 intSitesamplesTbl <- left_join(intSitesamplesTbl, select(samples, SpecimenAccNum, Patient, Trial), by = 'SpecimenAccNum')
 
 
+# Create output directories.
 invisible(sapply(unique(samples$Trial), function(x) dir.create(file.path(reportOutputDir, 'trials', x))))
 
 
 # Idenitfy Trials and patient reports which are no longer defined in the databse and delete them in the output directory.
-invisible(lapply(list.files(reportOutputDir, recursive = TRUE, pattern = '.pdf$'), function(x){
+write('Determining if previous reports need to be updated...', file = log, append = TRUE)
+
+
+invisible(lapply(list.files(file.path(reportOutputDir, 'trials'), recursive = TRUE, pattern = '.pdf$'), function(x){
   
   # Skip seq run trials.
   if(grepl('seqRuns', x)) return(NA)
@@ -72,7 +92,7 @@ invisible(lapply(list.files(reportOutputDir, recursive = TRUE, pattern = '.pdf$'
   patient <-  o[length(o)-1]
   
     
-  # Retrieve snap show of sample data from the time the report was last created.
+  # Retrieve snap shop of sample data from the time the report was last created.
   file <- paste0(reportOutputDir, '/', paste0(o[1:(length(o)-1)], collapse = '/'), '/', 'sampleData.csv')
   
   
@@ -88,36 +108,41 @@ invisible(lapply(list.files(reportOutputDir, recursive = TRUE, pattern = '.pdf$'
     delete <- FALSE
     
     if(length(availableIntSiteSamples) != length(sd$SpecimenAccNum)){
+      write(paste0('Rebuilding report for ', trial, ' / ', patient, ' because number of available samples differ.'), file = log, append = TRUE)
       delete <- TRUE 
     } else {
-      if(! all(sort(availableIntSiteSamples) == sort(sd$SpecimenAccNum))) delete <- TRUE
+      if(! all(sort(availableIntSiteSamples) == sort(sd$SpecimenAccNum))){
+        write(paste0('Rebuilding report for ', trial, ' / ', patient, ' because one or more available sample IDs differ.'), file = log, append = TRUE)
+        delete <- TRUE
+      }
     }
     
     if (nrow(sd) != nrow(sd2)){
+       write(paste0('Rebuilding report for ', trial, ' / ', patient, ' because number of samples differ from last build.'), file = log, append = TRUE)
        delete <- TRUE
     } else {
       if(length(sd) == length(sd2)){
         if(! all(sd == sd2)){
+          write(paste0('Rebuilding report for ', trial, ' / ', patient, ' because one or more sample values changed from last build.'), file = log, append = TRUE)
           delete <- TRUE
         }
       }
     }
     
     if(delete){
-      message('\nDeleting patient directiory due to db mismatch: ', paste0(o[1:(length(o)-1)], collapse = '/'))
       unlink(paste0(reportOutputDir, '/', paste0(o[1:(length(o)-1)], collapse = '/')), recursive = TRUE)
     }
   }
   
   # Trial / patient does not exist in database -- delete patient directory
   if(nrow(subset(samples, Trial == o[length(o)-2] & Patient == o[length(o)-1])) == 0){ 
-    message('Deleting patient directiory ', paste0(o[1:(length(o)-1)], collapse = '/'))
+    write(paste0('Deleting patient directiory ', paste0(o[1:(length(o)-1)], collapse = '/'), ' because trial / patient is not in the sample DB.'), file = log, append = TRUE)
     unlink(paste0(reportOutputDir, '/', paste0(o[1:(length(o)-1)], collapse = '/')), recursive = TRUE)
   }
   
   # Trial does not exist in databae -- delete trial directory.
   if(nrow(subset(samples, Trial == o[length(o)-2])) == 0){ 
-    message('Deleting trial directory ', paste0(o[1:(length(o)-2)], collapse = '/'))
+    write(paste0('Deleting trial directory ', paste0(o[1:(length(o)-2)], collapse = '/'), ' because the trial is not in the sample DB.'), file = log, append = TRUE)
     unlink(paste0(reportOutputDir, '/', paste0(o[1:(length(o)-2)], collapse = '/')), recursive = TRUE)
   }
 }))
@@ -142,12 +167,17 @@ o <- tibble()
 
 
 if(nrow(r) > 0){
+  
+  write('These reports will be built / rebuilt: ', file = log, append = TRUE)
+  write.table(r, file = log, sep = '\t', append = TRUE)
+  
+  
   r$n <- ntile(1:nrow(r), CPUs)
   cluster <- makeCluster(CPUs)
   clusterExport(cluster, c('Rscript', 'log', 'sampleDB.group', 'intSiteDB.group', 'reportOutputDir', 'softwareDir', 'intSitesamplesTbl', 'sampleDB.group'))
   
-  o <- bind_rows(parLapply(cluster, split(r, r$n), function(x){
-  #o <- bind_rows(lapply(split(r, r$n), function(x){
+  #o <- bind_rows(parLapply(cluster, split(r, r$n), function(x){
+  o <- bind_rows(lapply(split(r, r$n), function(x){
          library(dplyr)
          library(RMySQL)
          bind_rows(lapply(split(x, paste(x$patient, x$trial)), function(x2){
@@ -160,7 +190,6 @@ if(nrow(r) > 0){
                              '--reportFile ', file.path(softwareDir, 'geneTherapySubjectReport', 'report.Rmd'), ' ',
                              '--legacyData ', file.path(softwareDir,  'geneTherapyData', 'legacyData.rds'))
            
-           message(command)
            write(c(command, '\n'), file = log, append = TRUE)
   
       
@@ -198,11 +227,12 @@ if(nrow(r) > 0){
     }))
   }))
   
+  write('Report build report', file = log, append = TRUE)
   write.table(o, sep = '\t', file = log, quote = FALSE, row.names = FALSE, append = TRUE)
 }
 
 
-# Update data exchange archives.
+# Update data exchange archives which are linked from trial specific pages.
 system(file.path(softwareDir, 'updateDataExchanges.R'))
 
 
@@ -223,10 +253,6 @@ for(d in dirs){
 }
 
 
-#createTrialReports <- data.frame(result = unlist(createTrialReports))
-#createTrialReports$trial <- list.dirs(file.path(reportOutputDir, 'trials'), recursive = FALSE)
-
-
 if(! dir.exists(file.path(reportOutputDir, 'dashboard'))) dir.create(file.path(reportOutputDir, 'dashboard'))
 
 # Create overview page.
@@ -234,4 +260,9 @@ rmarkdown::render(file.path(softwareDir, 'dashboard.Rmd'), output_file = file.pa
                   params = list('reportOutputDir' = reportOutputDir,
                                 'sequencingArchiveDir' = sequencingArchiveDir))
 
-file.remove(file.path(reportOutputDir, 'LOCK'))
+# Remove LOCK file
+file.remove(file.path(reportOutputDir, 'reportMaker.lock'))
+
+
+system('chown -R everett.data_manager /media/lorax/data/export/projects/trials')
+system('chmod -R g+w /media/lorax/data/export/projects/trials')

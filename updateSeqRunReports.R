@@ -1,6 +1,8 @@
 #!/opt/R-3.4.4-20180823/lib64/R/bin/Rscript
 
-sequencingArchiveDir <- '/media/sequencing/Illumina/'
+sequencingArchiveDir <- '/media/sequencing/Illumina'
+#sequencingArchiveDir <- '/media/lorax/data/sequencing/Illumina-archive'
+
 intSiteDB.group      <- 'intsites_miseq'
 sampleDB.group       <- 'specimen_management'
 reportOutputDir      <- '/media/lorax/data/export/projects'
@@ -8,7 +10,10 @@ Rscript              <- '/opt/R-3.4.4-20180823/lib64/R/bin/Rscript'
 softwareDir          <- '/media/lorax/data/software/geneTherapyReports'
 logFile              <- file.path(reportOutputDir, 'log')
 
-seqRunAnalysesToKeep <- 75
+
+if(file.exists(file.path(reportOutputDir, 'PMACS.lock'))) stop('PMACS.lock file found -- aborting.')
+
+seqRunAnalysesToKeep <- 30
 nBarCodes <- 30
 LTRwidth  <- 14
 readSamplePlotN <- 10000
@@ -52,6 +57,8 @@ d <- tibble(dir = list.dirs(sequencingArchiveDir, recursive = FALSE, full.names 
   top_n(seqRunAnalysesToKeep, wt = date) %>%
   arrange(desc(date))
 
+# d <- subset(d, run == '210215_M03249_0157_000000000-DB647')
+
 dbConn  <- dbConnect(MySQL(), group = sampleDB.group)
 runsToInclude <- unname(unlist(dbGetQuery(dbConn, "select miseqid from seqRunAnalysis where updateReport = '1'")))
 
@@ -67,6 +74,7 @@ invisible(lapply(1:nrow(d), function(x){
   runID <- le(x$dir, '/')
   write(paste0('Starting ', runID), file = logFile, append = TRUE)
   
+  #browser()
   
   # Skip this run if the final output is present and it is not in the runsToIncude vector from the seqRunAnalysis 
   # database table which would overide.
@@ -82,6 +90,8 @@ invisible(lapply(1:nrow(d), function(x){
   runStats <- tibble()
   R1plot <- ggplot()
   R2plot <- ggplot()
+  
+  #browser()
   
   if(file.exists(file.path(x$dir, 'SampleSheet.csv'))){
     o <- readLines(file.path(x$dir, 'SampleSheet.csv'))
@@ -198,6 +208,9 @@ invisible(lapply(1:nrow(d), function(x){
     dbConn  <- dbConnect(MySQL(), group=intSiteDB.group)
     runStats <- dbGetQuery(dbConn, paste0('select * from intSiteCallerStats where miseqid ="', runID,'"'))
     
+    
+   #browser() 
+    
     if(nrow(runStats) != 0){
       write('Processing run stats.', file = logFile, append = TRUE)
       runStats <- bind_rows(lapply(split(runStats, runStats$sampleName), function(x){
@@ -217,6 +230,7 @@ invisible(lapply(1:nrow(d), function(x){
         
         if(length(controlSites) > 0){
           controlSites <- data.frame(controlSites) %>% mutate(posid = paste0(seqnames, strand, start)) %>% select(sampleName, posid, reads, estAbund)
+          # openxlsx::write.xlsx(controlSites, file = '~/controlSites.xlsx')
         } else {
           controlSites <- data.frame()
         }

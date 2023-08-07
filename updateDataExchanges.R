@@ -45,7 +45,7 @@ invisible(lapply(split(d, d$trial), function(x){
               timePoint, estAbund, relAbund, nearestFeature,	inFeature, nearestFeatureStrand, inFeatureExon,	
               nearestFeatureDist,	nearestOncoFeature,	nearestOncoFeatureDist)
    
-  names(o) <- c('chromosome',	'position',	'strand','refGenome', 'reads', 'subject', ',externalSampleID',
+  names(o) <- c('chromosome',	'position',	'strand','refGenome', 'reads', 'subject', 'externalSampleID',
                 'internalSampleID', 'cellType',	'timePoint',	'estAbund',	'relAbund',	'nearestFeature',	'inFeature',	
                 'nearestFeatureStrand',	'inFeatureExon',	'nearestFeatureDist',	'nearestOncoFeature', 'nearestOncoFeatureDist')
   

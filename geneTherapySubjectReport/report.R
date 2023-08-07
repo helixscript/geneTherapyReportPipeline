@@ -40,9 +40,9 @@ args <- parser$parse_args()
 # args$specimenDB               <- 'specimen_management'
 # args$intSiteDB                <- 'intsites_miseq'
 # args$reportFile               <- 'report.Rmd'
-# args$patient                  <- 'pPatient1'
-# args$trial                    <- 'sadelaineAbundantClonesFinal'
-# args$outputDir                <- 'output/pPatient1'
+# args$patient                  <- 'p254-1107'
+# args$trial                    <- '16-206_Maus'
+# args$outputDir                <- 'output/p254-1107'
 # args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
 # args$numClones                <- 10
 # args$use454ReadLevelRelAbunds <- FALSE
@@ -97,20 +97,20 @@ intSiteSamples <- intSiteSamples[intSiteSamples %in% sampleIDs]
 intSites   <- GRanges()
 legacyData <- GRanges()
 
-if(file.exists(args$legacyData)){
-  legacyData <- makeGRangesFromDataFrame(subset(readRDS(args$legacyData), 
-                                                patient == args$patient & 
-                                                trial == args$trial), 
-                                         keep.extra.columns = TRUE)
-  legacyData$trial <- NULL
-}
+#if(file.exists(args$legacyData)){
+#  legacyData <- makeGRangesFromDataFrame(subset(readRDS(args$legacyData), 
+#                                                patient == args$patient & 
+#                                                trial == args$trial), 
+#                                         keep.extra.columns = TRUE)
+#  legacyData$trial <- NULL
+#}
 
 
 if(any(sampleIDs %in% intSiteSamples)){
   intSites <- gt23::getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
   
   if(length(intSites) == 0){
-    noSitesReport(sampleData)
+    noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
     q()
   }
   
@@ -125,7 +125,7 @@ if(any(sampleIDs %in% intSiteSamples)){
   })))
   
   if(length(intSites) == 0){
-    noSitesReport(sampleData)
+    noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
     q()
   }
   
@@ -162,7 +162,7 @@ intSites <- intSites[width(intSites) >= minRangeWidth]
 
 
 if(length(intSites) == 0){
-  noSitesReport(sampleData)
+  noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
   q()
 }
 
