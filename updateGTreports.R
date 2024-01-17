@@ -1,7 +1,7 @@
 #!/opt/R-3.4.4-20180823/lib64/R/bin/Rscript
 
-#sequencingArchiveDir <- '/media/sequencing/Illumina/'
-sequencingArchiveDir <- '/media/lorax/data/sequencing/Illumina-archive'
+sequencingArchiveDir <- '/media/sequencing/Illumina'
+#sequencingArchiveDir <- '/media/lorax/data/sequencing/Illumina-archive'
 
 sampleDB.group       <- 'specimen_management'
 intSiteDB.group      <- 'intsites_miseq'

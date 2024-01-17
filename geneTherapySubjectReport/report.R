@@ -40,9 +40,9 @@ args <- parser$parse_args()
 # args$specimenDB               <- 'specimen_management'
 # args$intSiteDB                <- 'intsites_miseq'
 # args$reportFile               <- 'report.Rmd'
-# args$patient                  <- 'p254-1107'
-# args$trial                    <- '16-206_Maus'
-# args$outputDir                <- 'output/p254-1107'
+# args$patient                  <- 'p102-105'
+# args$trial                    <- 'AVRO-RD-01-201'
+# args$outputDir                <- 'output'
 # args$richPopCells             <- 'PBMC,T CELLS,B CELLS'
 # args$numClones                <- 10
 # args$use454ReadLevelRelAbunds <- FALSE
@@ -106,8 +106,102 @@ legacyData <- GRanges()
 #}
 
 
+expandTimePoints <- function (tps) 
+{
+  d <- tibble::tibble(tp = sub("_", ".", tps))
+  d$n <- 1:nrow(d)
+  d$timePointType <- unlist(stringr::str_extract(base::toupper(d$tp),  "[DMY]"))
+
+  d[! grepl('^[\\-]?[DMY]\\d+$', d$tp, perl = TRUE),]$timePointType <- 'X'
+  d$timePointType[which(is.na(d$timePointType))] <- "X"
+  
+  d <- dplyr::bind_rows(lapply(split(d, d$timePointType), function(x) {
+    n <- as.numeric(stringr::str_match(x$tp, "[\\d\\.]+")) * 
+      ifelse(grepl("\\-", x$tp), -1, 1)
+    if (x$timePointType[1] == "D") {
+      x$timePointMonths <- base::round(n/30.4167, digits = 0)
+      x$timePointDays <- base::round(n, digits = 0)
+    }
+    else if (x$timePointType[1] == "M") {
+      x$timePointMonths <- base::round(n, digits = 0)
+      x$timePointDays <- base::round(n * 30.4167, digits = 0)
+    }
+    else if (x$timePointType[1] == "Y") {
+      x$timePointMonths <- base::round(n * 12, digits = 0)
+      x$timePointDays <- base::round(n * 365, digits = 0)
+    }
+    else {
+      message("Warning - could not determine date unit for: ", 
+              paste0(unique(x$timePoint), collapse = ", "))
+      x$timePointMonths <- 0
+      x$timePointDays <- 0
+    }
+    x
+  }))
+  data.frame(dplyr::arrange(d, n) %>% dplyr::select(timePointMonths,  timePointDays))
+}
+
+
+getDBgenomicFragments <- function (samples, sampleDB.group, intSiteDB.group) 
+{
+  options(useFancyQuotes = FALSE)
+  if (length(samples) == 0) 
+    stop("One or more sample ids must be provided.")
+  dbConn1 <- DBI::dbConnect(RMySQL::MySQL(), group = sampleDB.group)
+  dbConn2 <- DBI::dbConnect(RMySQL::MySQL(), group = intSiteDB.group)
+  intSiteSamples <- DBI::dbGetQuery(dbConn2, "select * from samples")
+  intSiteSamples$GTSP <- gsub("\\-\\d+$", "", intSiteSamples$sampleName)
+  sampleIDs <- unique(base::subset(intSiteSamples, GTSP %in% 
+                                     samples)$sampleID)
+  
+  ### browser()
+  
+  if (length(sampleIDs) == 0) 
+    stop("Error: no intSite sample ids have been selected.")
+  replicateQuery <- paste("samples.sampleID in (", paste0(sampleIDs, 
+                                                          collapse = ","), ")")
+  q <- sprintf("select position, chr, strand, breakpoint, count, refGenome,\n               sampleName from sites left join samples on\n               sites.sampleID = samples.sampleID\n               left join pcrbreakpoints on\n               pcrbreakpoints.siteID = sites.siteID\n               where (%s)", 
+               replicateQuery)
+  sampleData <- DBI::dbGetQuery(dbConn1, "select * from gtsp")
+  sites <- DBI::dbGetQuery(dbConn2, q)
+  DBI::dbDisconnect(dbConn1)
+  DBI::dbDisconnect(dbConn2)
+  if (nrow(sites) == 0) 
+    return(GRanges())
+  
+  sites$GTSP <- as.character(sub("\\-\\d+", "", sites$sampleName))
+  sites$patient <- sampleData[match(sites$GTSP, sampleData$SpecimenAccNum), 
+                              "Patient"]
+  sites$timePoint <- sampleData[match(sites$GTSP, sampleData$SpecimenAccNum), 
+                                "Timepoint"]
+  sites$cellType <- sampleData[match(sites$GTSP, sampleData$SpecimenAccNum), 
+                               "CellType"]
+  sites$timePoint <- toupper(sites$timePoint)
+  sites$timePoint <- gsub("_", ".", sites$timePoint)
+  
+  
+  sites <- dplyr::bind_cols(sites, expandTimePoints(sites$timePoint))
+  sites <- tidyr::drop_na(sites)
+  intSites <- GenomicRanges::GRanges(seqnames = S4Vectors::Rle(sites$chr), 
+                                     ranges = IRanges::IRanges(start = pmin(sites$position, 
+                                                                            sites$breakpoint), end = pmax(sites$position, sites$breakpoint)), 
+                                     strand = S4Vectors::Rle(sites$strand))
+  sites <- dplyr::rename(sites, reads = count)
+  GenomicRanges::mcols(intSites) <- data.frame(dplyr::select(sites, 
+                                                             refGenome, reads, patient, sampleName, GTSP, cellType, 
+                                                             timePoint, timePointDays, timePointMonths))
+  intSites
+}
+
+# GTSP5147
 if(any(sampleIDs %in% intSiteSamples)){
-  intSites <- gt23::getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
+  intSites <- getDBgenomicFragments(sampleIDs, 'specimen_management', 'intsites_miseq')
+  
+  if(any(grepl('TERMINATION', intSites$timePoint, ignore.case = TRUE))){
+    intSites[grepl('TERMINATION', intSites$timePoint, ignore.case = TRUE),]$timePointDays <-  max(intSites$timePointDays) + 1
+    intSites[grepl('TERMINATION', intSites$timePoint, ignore.case = TRUE),]$timePointMonths <-  max(intSites$timePointMonths) + 1
+  }
+  
   
   if(length(intSites) == 0){
     noSitesReport(subset(sampleData, SpecimenAccNum %in% intSiteSamples))
@@ -365,6 +459,7 @@ calculateUC50 <- function(abund){
 
 summaryTable <- group_by(d, GTSP) %>%
                 summarise(dataSource    = dataSource[1],
+                          refGenome     = refGenome[1],
                           timePointDays = timePointDays[1],
                           # Replicates    = n_distinct(sampleName),
                           # Patient       = patient[1],
@@ -382,6 +477,16 @@ summaryTable <- group_by(d, GTSP) %>%
                ungroup() %>%
                arrange(timePointDays) %>%
                select(-timePointDays)
+
+maxRelAbundTbl <- group_by(d, GTSP) %>%
+  dplyr::arrange(desc(relAbund)) %>%
+  dplyr::slice(1) %>%
+  select(timePoint, cellType, relAbund, posid, labeledNearestFeature) %>%
+  ungroup()
+
+maxRelAbundTbl$relAbund <- paste0(sprintf("%.2f", maxRelAbundTbl$relAbund), '%')
+maxRelAbundTbl <- dplyr::rename(maxRelAbundTbl, 'nearestFeature' = 'labeledNearestFeature')
+
 
 # Add failed samples.  JKE
 if(length(failedIntSiteSamples) > 0){

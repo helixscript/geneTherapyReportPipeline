@@ -1,0 +1,2 @@
+GTSP,dataSource,refGenome,Timepoint,CellType,TotalReads,InferredCells,UniqueSites,Gini,Chao1,Shannon,Pielou,UC50,Included,runDate,patient
+GTSP5833,Illumina,hg38,UNS,WHOLE BLOOD,"377,459","4,971","4,757",0.041,"61,583",8.45,0.998,"2,272",yes,2023-10-06,p304002

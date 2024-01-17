@@ -534,8 +534,6 @@ if(nrow(sites.multi) > 0){
 
 # Methods
 
-All coordinates are on human genome draft hg38.
-
 Detailed methods can be found these publications:  
 - Bioinformatics. 2012 Mar 15; 28(6): 755–762.   
 - Mol Ther Methods Clin Dev. 2017 Mar 17; 4: 17–26.  
@@ -543,11 +541,17 @@ Detailed methods can be found these publications:
   
 Analysis software:  
 - INSPIIRED v1.1  (http://github.com/BushmanLab/INSPIIRED)  
- 
-Report generation software:  
-- subjectReport v0.1 (http://github.com/everettJK/geneTherapySubjectReport)  
 
+\newpage
 
+# Supplementary table 1.  
+## Greatest sample relative abundance values.
+  
+  
+```{r, echo=FALSE, results='asis'}
+library(xtable)
+print(xtable(maxRelAbundTbl, align='llllclc'), comment=FALSE, include.rownames = FALSE)
+```
 
 
 
